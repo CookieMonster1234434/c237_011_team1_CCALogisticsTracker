@@ -13,7 +13,17 @@
 <body>
     <%- include('../partials/navbar') %>
     <div class="container">
-        <h2 class="mb-4">My Loans</h2>
+        <%# Only offer the clear button when there is actually something to clear,
+            so the student never clicks it and gets an error for nothing. %>
+        <% const returnedCount = (typeof loans !== 'undefined' ? loans : []).filter(function (l) { return l.status === 'returned'; }).length; %>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="mb-0">My Loans</h2>
+            <% if (returnedCount > 0) { %>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#clearMyReturnedModal">
+                    <i class="bi bi-trash3"></i> Clear Returned History (<%= returnedCount %>)
+                </button>
+            <% } %>
+        </div>
         <%- include('../partials/alert') %>
         <div class="table-responsive">
             <table class="table table-bordered align-middle bg-white">
@@ -57,6 +67,29 @@
             </table>
         </div>
     </div>
+
+    <% if (returnedCount > 0) { %>
+        <div class="modal fade" id="clearMyReturnedModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Clear Returned History</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        Remove <%= returnedCount %> returned loan record(s) from your history?
+                        Anything you still have on loan will not be affected.
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <form action="/myloans/clear-returned" method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-danger">Clear Returned History</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <% } %>
     <%- include('../partials/footer') %>
 </body>
 </html>

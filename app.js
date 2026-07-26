@@ -935,6 +935,49 @@ app.post('/admin/loans/clear-returned', checkAuthenticated, checkAdmin, (req, re
     });
 });
 
+// Student clears their OWN returned loan history from the My Loans page.
+// Same idea as the admin version above, but with two important differences:
+//   1. It is scoped to req.session.user.user_id, so a student can only ever clear
+//      their own rows - the user id is taken from the session, never from the form,
+//      otherwise one student could clear someone else's history.
+//   2. checkAuthenticated only (no checkAdmin), because this is a student action.
+// The WHERE clause matches status = 'returned' only, so anything still borrowed is
+// left alone. Note 'overdue' is worked out in JavaScript by markOverdue() for display -
+// the database itself only ever stores 'borrowed' or 'returned', so an overdue item is
+// still 'borrowed' in the table and can never be matched by this query.
+app.post('/myloans/clear-returned', checkAuthenticated, (req, res) => {
+    const userId = req.session.user.user_id;
+
+    // Count first so we can tell the student exactly how many rows were removed
+    const countSql = `SELECT COUNT(*) AS returnedCount FROM loans
+                      WHERE user_id = ? AND status = 'returned'`;
+    db.query(countSql, [userId], (error, countResults) => {
+        if (error) {
+            console.error('Error counting loan history:', error.message);
+            req.flash('error', 'Could not clear your loan history.');
+            return res.redirect('/myloans');
+        }
+
+        const returnedCount = countResults[0].returnedCount;
+
+        if (returnedCount === 0) {
+            req.flash('error', 'You have no returned loans to clear.');
+            return res.redirect('/myloans');
+        }
+
+        const deleteSql = `DELETE FROM loans WHERE user_id = ? AND status = 'returned'`;
+        db.query(deleteSql, [userId], (error, results) => {
+            if (error) {
+                console.error('Error clearing loan history:', error.message);
+                req.flash('error', 'Could not clear your loan history.');
+                return res.redirect('/myloans');
+            }
+            req.flash('success', returnedCount + ' returned loan record(s) cleared from your history.');
+            res.redirect('/myloans');
+        });
+    });
+});
+
 // Show the Manage Users page (admin only) - the screen used to remove users.
 app.get('/admin/users', checkAuthenticated, checkAdmin, (req, res) => {
     const sql = 'SELECT user_id, username, email, role FROM users ORDER BY user_id ASC';
