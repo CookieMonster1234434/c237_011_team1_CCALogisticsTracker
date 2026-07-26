@@ -40,6 +40,10 @@
                                     <%# HONG WEI: an admin cannot delete their own account, so hide the button on their own row %>
                                     <% if (u.user_id === user.user_id) { %>
                                         <span class="text-muted small">This is you</span>
+                                    <%# Admins are peers - one admin must not be able to remove another.
+                                        The server enforces this too; hiding the button is only the UI half. %>
+                                    <% } else if (u.role === 'admin') { %>
+                                        <span class="text-muted small">Admin account</span>
                                     <% } else { %>
                                         <form action="/admin/users/<%= u.user_id %>/delete" method="POST" class="d-inline"
                                               onsubmit="return confirm('Delete this user account? Their returned loan history will also be removed.');">

@@ -980,60 +980,84 @@ app.post('/admin/users/:id/delete', checkAuthenticated, checkAdmin, (req, res) =
         return res.redirect('/admin/users');
     }
 
-    // Step 1 - refuse if this user still has items out on loan
-    const activeSql = `SELECT COUNT(*) AS activeLoans FROM loans
-                       WHERE user_id = ? AND status = 'borrowed'`;
-    db.query(activeSql, [userId], (error, results) => {
+    // Step 1 - look up who is being deleted. Admins are peers, so one admin must not
+    // be able to remove another - only student accounts can be deleted here. This is
+    // checked on the server because hiding the button in the view is not a real guard:
+    // the form could still be submitted by hand to /admin/users/<id>/delete.
+    const roleSql = 'SELECT role FROM users WHERE user_id = ?';
+    db.query(roleSql, [userId], (error, targetRows) => {
         if (error) {
             console.error('Database query error:', error.message);
-            return res.send('Error checking loans');
-        }
-
-        if (results[0].activeLoans > 0) {
-            req.flash('error', 'Cannot delete: this user still has ' + results[0].activeLoans + ' item(s) on loan.');
+            req.flash('error', 'Could not look up that user.');
             return res.redirect('/admin/users');
         }
 
-        // Step 2 - clear the child rows that point to this user first, otherwise the
-        // foreign keys block the delete. Three tables reference users.user_id:
-        // loans, equipment_requests and tickets. Missing any one of them makes the
-        // final DELETE fail with a foreign key error.
-        const clearLoansSql = 'DELETE FROM loans WHERE user_id = ?';
-        db.query(clearLoansSql, [userId], (error, results) => {
+        if (targetRows.length === 0) {
+            req.flash('error', 'That user account no longer exists.');
+            return res.redirect('/admin/users');
+        }
+
+        if (targetRows[0].role === 'admin') {
+            req.flash('error', 'Cannot delete: admin accounts can only be removed by the logistics teacher in the database.');
+            return res.redirect('/admin/users');
+        }
+
+        // Step 2 - refuse if this user still has items out on loan
+        const activeSql = `SELECT COUNT(*) AS activeLoans FROM loans
+                           WHERE user_id = ? AND status = 'borrowed'`;
+        db.query(activeSql, [userId], (error, results) => {
             if (error) {
-                console.error('Error deleting loans:', error.message);
-                req.flash('error', 'Could not delete this user\'s loan history.');
+                console.error('Database query error:', error.message);
+                req.flash('error', 'Could not check this user\'s loans.');
                 return res.redirect('/admin/users');
             }
 
-            const clearRequestsSql = 'DELETE FROM equipment_requests WHERE user_id = ?';
-            db.query(clearRequestsSql, [userId], (error, results) => {
+            if (results[0].activeLoans > 0) {
+                req.flash('error', 'Cannot delete: this user still has ' + results[0].activeLoans + ' item(s) on loan.');
+                return res.redirect('/admin/users');
+            }
+
+            // Step 2 - clear the child rows that point to this user first, otherwise the
+            // foreign keys block the delete. Three tables reference users.user_id:
+            // loans, equipment_requests and tickets. Missing any one of them makes the
+            // final DELETE fail with a foreign key error.
+            const clearLoansSql = 'DELETE FROM loans WHERE user_id = ?';
+            db.query(clearLoansSql, [userId], (error, results) => {
                 if (error) {
-                    console.error('Error deleting equipment requests:', error.message);
-                    req.flash('error', 'Could not delete this user\'s equipment requests.');
+                    console.error('Error deleting loans:', error.message);
+                    req.flash('error', 'Could not delete this user\'s loan history.');
                     return res.redirect('/admin/users');
                 }
 
-                // tickets is an old table that only exists on the live database, so a
-                // database built from the .sql file will not have it - that is not an error.
-                const clearTicketsSql = 'DELETE FROM tickets WHERE user_id = ?';
-                db.query(clearTicketsSql, [userId], (error, results) => {
-                    if (error && error.code !== 'ER_NO_SUCH_TABLE') {
-                        console.error('Error deleting tickets:', error.message);
-                        req.flash('error', 'Could not delete this user\'s tickets.');
+                const clearRequestsSql = 'DELETE FROM equipment_requests WHERE user_id = ?';
+                db.query(clearRequestsSql, [userId], (error, results) => {
+                    if (error) {
+                        console.error('Error deleting equipment requests:', error.message);
+                        req.flash('error', 'Could not delete this user\'s equipment requests.');
                         return res.redirect('/admin/users');
                     }
 
-                    // Step 3 - now the user row can be deleted
-                    const deleteSql = 'DELETE FROM users WHERE user_id = ?';
-                    db.query(deleteSql, [userId], (error, results) => {
-                        if (error) {
-                            console.error('Error deleting user:', error.message);
-                            req.flash('error', 'Could not delete this user: ' + error.message);
+                    // tickets is an old table that only exists on the live database, so a
+                    // database built from the .sql file will not have it - that is not an error.
+                    const clearTicketsSql = 'DELETE FROM tickets WHERE user_id = ?';
+                    db.query(clearTicketsSql, [userId], (error, results) => {
+                        if (error && error.code !== 'ER_NO_SUCH_TABLE') {
+                            console.error('Error deleting tickets:', error.message);
+                            req.flash('error', 'Could not delete this user\'s tickets.');
                             return res.redirect('/admin/users');
                         }
-                        req.flash('success', 'User account deleted.');
-                        res.redirect('/admin/users');
+
+                        // Step 3 - now the user row can be deleted
+                        const deleteSql = 'DELETE FROM users WHERE user_id = ?';
+                        db.query(deleteSql, [userId], (error, results) => {
+                            if (error) {
+                                console.error('Error deleting user:', error.message);
+                                req.flash('error', 'Could not delete this user: ' + error.message);
+                                return res.redirect('/admin/users');
+                            }
+                            req.flash('success', 'User account deleted.');
+                            res.redirect('/admin/users');
+                        });
                     });
                 });
             });
