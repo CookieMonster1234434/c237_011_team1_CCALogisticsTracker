@@ -16,9 +16,14 @@
     <div class="container">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2 class="mb-0">All Loans</h2>
-            <span class="badge bg-danger fs-6">
-                <%= typeof overdueCount !== 'undefined' ? overdueCount : 0 %> overdue
-            </span>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-danger fs-6">
+                    <%= typeof overdueCount !== 'undefined' ? overdueCount : 0 %> overdue
+                </span>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#clearReturnedModal">
+                    <i class="bi bi-trash3"></i> Clear Returned Loans
+                </button>
+            </div>
         </div>
         <%- include('../partials/alert') %>
         <div class="table-responsive">
@@ -31,6 +36,7 @@
                         <th>Due Date</th>
                         <th>Return Date</th>
                         <th>Status</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -45,15 +51,65 @@
                                 <td>
                                     <span class="badge status-badge-<%= loan.status %>"><%= loan.status %></span>
                                 </td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteLoanModal<%= loan.loan_id %>">
+                                        Delete
+                                    </button>
+
+                                    <div class="modal fade" id="deleteLoanModal<%= loan.loan_id %>" tabindex="-1" aria-hidden="true">
+                                        <div class="modal-dialog">
+                                            <div class="modal-content">
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title">Delete Loan Record</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <% if (loan.status === 'borrowed' || loan.status === 'overdue') { %>
+                                                        Delete this loan record for <%= loan.username %> (<%= loan.name %>)?
+                                                        The item is still on loan - it will be returned to stock first.
+                                                    <% } else { %>
+                                                        Delete this returned loan record for <%= loan.username %> (<%= loan.name %>)?
+                                                    <% } %>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                    <form action="/admin/loans/<%= loan.loan_id %>/delete" method="POST" class="d-inline">
+                                                        <button type="submit" class="btn btn-danger">Delete</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
                             </tr>
                         <% }) %>
                     <% } else { %>
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">No loans recorded yet.</td>
+                            <td colspan="7" class="text-center text-muted py-4">No loans recorded yet.</td>
                         </tr>
                     <% } %>
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <div class="modal fade" id="clearReturnedModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Clear Returned Loans</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Delete every loan record that has already been returned? Loans still borrowed or overdue are not affected.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form action="/admin/loans/clear-returned" method="POST" class="d-inline">
+                        <button type="submit" class="btn btn-danger">Clear Returned Loans</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
     <%- include('../partials/footer') %>
