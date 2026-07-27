@@ -54,9 +54,14 @@ CREATE TABLE loans (
     due_date     DATE NOT NULL,
     return_date  DATE DEFAULT NULL,
     status       VARCHAR(20) NOT NULL DEFAULT 'borrowed',
+    archived_at  DATETIME DEFAULT NULL,
     FOREIGN KEY (user_id) REFERENCES users(user_id),
     FOREIGN KEY (equipment_id) REFERENCES equipment(equipment_id)
 );
+-- archived_at is set by "Clear Returned Loans" / "Clear Returned History" instead of
+-- deleting the row, so the loan history survives for accountability - a row with
+-- archived_at set is simply hidden from the My Loans and All Loans lists.
+-- Only ever set on status = 'returned' rows; a 'borrowed' row is never archived.
 
 
 -- ---------------------------------------------------------------------
