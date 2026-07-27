@@ -534,6 +534,14 @@ app.post('/equipment/:id/borrow', checkAuthenticated, (req, res) => {
     return res.redirect(`/equipment/${equipmentId}`);
   }
 
+  const duration = parseInt(req.body.duration, 10) || 7;
+  const quantity = parseInt(req.body.quantity, 10) || 1;
+
+  if (quantity < 1) {
+    req.flash('error', 'Invalid quantity.');
+    return res.redirect(`/equipment/${equipmentId}/borrow`);
+  }
+
   const overdueSql = `SELECT COUNT(*) AS overdueCount 
                       FROM loans WHERE user_id = ? AND status = 'borrowed' AND due_date < CURDATE()`;
 
@@ -544,32 +552,27 @@ app.post('/equipment/:id/borrow', checkAuthenticated, (req, res) => {
       return res.redirect('/myloans');
     }
 
-    db.query('SELECT available_quantity FROM equipment WHERE equipment_id = ?', [equipmentId], (err, stock) => {
-      if (err) return res.send('Error checking stock');
-      if (!stock.length) return res.send('Equipment not found');
-      if (stock[0].available_quantity <= 0) {
-        req.flash('error', 'This item is currently unavailable.');
+    const stockSql = `UPDATE equipment SET available_quantity = available_quantity - ?
+                      WHERE equipment_id = ? AND available_quantity >= ?`;
+
+    db.query(stockSql, [quantity, equipmentId, quantity], (err, result) => {
+      if (err) return res.send('Error updating stock');
+      if (result.affectedRows === 0) {
+        req.flash('error', 'Not enough units available or item not found.');
         return res.redirect(`/equipment/${equipmentId}`);
       }
 
-const duration = parseInt(req.body.duration, 10) || 7;
-const loanSql = `INSERT INTO loans (user_id, equipment_id, borrow_date, due_date, status)
-                 VALUES (?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? DAY), 'borrowed')`;
+      const loanSql = `INSERT INTO loans (user_id, equipment_id, quantity, borrow_date, due_date, status)
+                       VALUES (?, ?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL ? DAY), 'borrowed')`;
 
-db.query(loanSql, [userId, equipmentId, duration], (err) => {
-  if (err) return res.send('Error creating loan');
-
-
-        db.query('UPDATE equipment SET available_quantity = available_quantity - 1 WHERE equipment_id = ?', [equipmentId], (err) => {
-          if (err) return res.send('Error updating stock');
-          req.flash('success', 'Equipment borrowed successfully.');
-          res.redirect('/myloans');
-        });
+      db.query(loanSql, [userId, equipmentId, quantity, duration], (err) => {
+        if (err) return res.send('Error creating loan');
+        req.flash('success', 'Equipment borrowed successfully.');
+        res.redirect('/myloans');
       });
     });
   });
 });
-
 
 // Request a new equipment item
 app.get('/equipment/requests/new', checkAuthenticated, (req, res) => {
@@ -740,10 +743,10 @@ app.post('/myloans/:id/return', checkAuthenticated, (req, res) => {
             }
 
             // Put the unit back into the inventory
-            const restockSql = `UPDATE equipment SET available_quantity = available_quantity + 1
+            const restockSql = `UPDATE equipment SET available_quantity = available_quantity + ?
                                 WHERE equipment_id = ?`;
 
-            db.query(restockSql, [loan.equipment_id], (error, results) => {
+            db.query(restockSql, [loan.quantity,loan.equipment_id], (error, results) => {
                 if (error) {
                     console.error('Error updating stock:', error.message);
                     return res.send('Error updating stock');
