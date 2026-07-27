@@ -411,12 +411,14 @@ app.get('/equipment/:id', (req, res) => {
 app.get('/myloans', checkAuthenticated, (req, res) => {
     const userId = req.session.user.user_id;
 
-    // JOIN so we can show the equipment name instead of just the id
+    // JOIN so we can show the equipment name instead of just the id.
+    // archived_at IS NULL excludes anything cleared via "Clear Returned History" -
+    // the row still exists in the database, it's just hidden from this list.
     const sql = `SELECT loans.loan_id, loans.equipment_id, equipment.name,
                         loans.borrow_date, loans.due_date, loans.return_date, loans.status
                  FROM loans
                  JOIN equipment ON loans.equipment_id = equipment.equipment_id
-                 WHERE loans.user_id = ?
+                 WHERE loans.user_id = ? AND loans.archived_at IS NULL
                  ORDER BY loans.borrow_date DESC`;
 
     db.query(sql, [userId], (error, results) => {
@@ -435,13 +437,16 @@ app.get('/myloans', checkAuthenticated, (req, res) => {
     });
 });
 
-// Admin views every loan in the system
+// Admin views every loan in the system.
+// archived_at IS NULL excludes anything cleared via "Clear Returned Loans" -
+// the row still exists in the database, it's just hidden from this list.
 app.get('/admin/loans', checkAuthenticated, checkAdmin, (req, res) => {
     const sql = `SELECT loans.loan_id, users.username, equipment.name,
                         loans.borrow_date, loans.due_date, loans.return_date, loans.status
                  FROM loans
                  JOIN equipment ON loans.equipment_id = equipment.equipment_id
                  JOIN users ON loans.user_id = users.user_id
+                 WHERE loans.archived_at IS NULL
                  ORDER BY loans.due_date ASC`;
 
     db.query(sql, (error, results) => {
@@ -908,12 +913,17 @@ app.post('/admin/loans/:id/delete', checkAuthenticated, checkAdmin, (req, res) =
     });
 });
 
-// Admin clears the whole returned-loan history in one go, to tidy the table.
-// This only removes loans that are already 'returned', so nothing that is
-// still on loan is affected.
+// Admin clears the whole returned-loan history in one go, to tidy the All Loans table.
+// This is a soft delete: it sets archived_at instead of running DELETE, so the loan
+// history is preserved for accountability (who borrowed what, and when) and only
+// hidden from the list view (see the WHERE archived_at IS NULL in GET /admin/loans).
+// This only touches loans that are already 'returned', so nothing still on loan is
+// affected, and archived_at IS NULL in the WHERE clause stops an already-archived
+// row from being counted or touched again.
 app.post('/admin/loans/clear-returned', checkAuthenticated, checkAdmin, (req, res) => {
     // First count how many returned loans there are, so we can report the number
-    const countSql = `SELECT COUNT(*) AS returnedCount FROM loans WHERE status = 'returned'`;
+    const countSql = `SELECT COUNT(*) AS returnedCount FROM loans
+                      WHERE status = 'returned' AND archived_at IS NULL`;
     db.query(countSql, (error, countResults) => {
         if (error) {
             console.error('Error counting loan history:', error.message);
@@ -922,9 +932,10 @@ app.post('/admin/loans/clear-returned', checkAuthenticated, checkAdmin, (req, re
 
         const returnedCount = countResults[0].returnedCount;
 
-        // Then delete all the returned loans
-        const deleteSql = `DELETE FROM loans WHERE status = 'returned'`;
-        db.query(deleteSql, (error, results) => {
+        // Then archive all the returned loans instead of deleting them
+        const archiveSql = `UPDATE loans SET archived_at = NOW()
+                            WHERE status = 'returned' AND archived_at IS NULL`;
+        db.query(archiveSql, (error, results) => {
             if (error) {
                 console.error('Error clearing loan history:', error.message);
                 return res.send('Error clearing loan history');
@@ -941,16 +952,19 @@ app.post('/admin/loans/clear-returned', checkAuthenticated, checkAdmin, (req, re
 //      their own rows - the user id is taken from the session, never from the form,
 //      otherwise one student could clear someone else's history.
 //   2. checkAuthenticated only (no checkAdmin), because this is a student action.
-// The WHERE clause matches status = 'returned' only, so anything still borrowed is
-// left alone. Note 'overdue' is worked out in JavaScript by markOverdue() for display -
-// the database itself only ever stores 'borrowed' or 'returned', so an overdue item is
-// still 'borrowed' in the table and can never be matched by this query.
+// This is a soft delete: it sets archived_at instead of running DELETE, so the loan
+// history is preserved and only hidden from the My Loans list (see the WHERE
+// archived_at IS NULL in GET /myloans). The WHERE clause matches status = 'returned'
+// only, so anything still borrowed is left alone. Note 'overdue' is worked out in
+// JavaScript by markOverdue() for display - the database itself only ever stores
+// 'borrowed' or 'returned', so an overdue item is still 'borrowed' in the table and
+// can never be matched by this query.
 app.post('/myloans/clear-returned', checkAuthenticated, (req, res) => {
     const userId = req.session.user.user_id;
 
-    // Count first so we can tell the student exactly how many rows were removed
+    // Count first so we can tell the student exactly how many rows were cleared
     const countSql = `SELECT COUNT(*) AS returnedCount FROM loans
-                      WHERE user_id = ? AND status = 'returned'`;
+                      WHERE user_id = ? AND status = 'returned' AND archived_at IS NULL`;
     db.query(countSql, [userId], (error, countResults) => {
         if (error) {
             console.error('Error counting loan history:', error.message);
@@ -965,8 +979,9 @@ app.post('/myloans/clear-returned', checkAuthenticated, (req, res) => {
             return res.redirect('/myloans');
         }
 
-        const deleteSql = `DELETE FROM loans WHERE user_id = ? AND status = 'returned'`;
-        db.query(deleteSql, [userId], (error, results) => {
+        const archiveSql = `UPDATE loans SET archived_at = NOW()
+                            WHERE user_id = ? AND status = 'returned' AND archived_at IS NULL`;
+        db.query(archiveSql, [userId], (error, results) => {
             if (error) {
                 console.error('Error clearing loan history:', error.message);
                 req.flash('error', 'Could not clear your loan history.');
