@@ -794,9 +794,9 @@ app.post('/admin/loans/:id/return', checkAuthenticated, checkAdmin, (req, res) =
             }
 
             // Put the unit back into the inventory
-            const restockSql = `UPDATE equipment SET available_quantity = available_quantity + 1
+            const restockSql = `UPDATE equipment SET available_quantity = available_quantity + ?
                                 WHERE equipment_id = ?`;
-            db.query(restockSql, [loan.equipment_id], (error, results) => {
+            db.query(restockSql, [loan.quantity,loan.equipment_id], (error, results) => {
                 if (error) {
                     console.error('Error updating stock:', error.message);
                     return res.send('Error updating stock');
@@ -883,9 +883,9 @@ app.post('/admin/loans/:id/delete', checkAuthenticated, checkAdmin, (req, res) =
 
         if (loan.status === 'borrowed') {
             // Item is still out on loan - restock one unit, then delete the record
-            const restockSql = `UPDATE equipment SET available_quantity = available_quantity + 1
+            const restockSql = `UPDATE equipment SET available_quantity = available_quantity + ?
                                 WHERE equipment_id = ?`;
-            db.query(restockSql, [loan.equipment_id], (error, results) => {
+            db.query(restockSql, [loan.quantity,loan.equipment_id], (error, results) => {
                 if (error) {
                     console.error('Error updating stock:', error.message);
                     return res.send('Error updating stock');
